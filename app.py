@@ -111,9 +111,9 @@ def ask_agent():
         return jsonify({'error': 'No prompt provided'}), 400
     
     try:
-        # Using gemini-1.5-flash as it is the most stable and widely available model
+        # Using gemini-flash-lite-latest for optimal performance and compatibility
         response = agent_client.models.generate_content(
-            model="gemini-1.5-flash", 
+            model="gemini-flash-lite-latest", 
             contents=prompt
         )
         return jsonify({
