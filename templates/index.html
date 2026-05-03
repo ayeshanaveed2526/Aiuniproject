@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI Hub | Advanced Intelligence Ecosystem</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+</head>
+<body>
+    <div class="background-blobs">
+        <div class="blob blob-1"></div>
+        <div class="blob blob-2"></div>
+        <div class="blob blob-3"></div>
+    </div>
+
+    <nav>
+        <div class="logo">AI<span>HUB</span></div>
+        <div class="nav-links">
+            <a href="#vision">Vision</a>
+            <a href="#ecosystem">Ecosystem</a>
+            <a href="#contact">Connect</a>
+        </div>
+    </nav>
+
+    <header>
+        <h1>Intelligence <br><span class="gradient-text">Redefined.</span></h1>
+        <p>Experience the convergence of Computer Vision, Natural Language Processing, and Advanced Analytics in one unified ecosystem.</p>
+        <div class="header-btns">
+            <a href="#ecosystem" class="btn btn-primary">Explore Models</a>
+            <a href="https://github.com" class="btn btn-secondary"><i class="fab fa-github"></i> Repository</a>
+        </div>
+    </header>
+
+    <section id="ecosystem" class="ecosystem">
+        <div class="section-title">
+            <h2>Our AI Ecosystem</h2>
+            <p>Three powerful models working in harmony to solve complex problems.</p>
+        </div>
+
+        <div class="grid">
+            <!-- Flower Classifier -->
+            <div class="card glass">
+                <div class="card-icon"><i class="fas fa-camera-retro"></i></div>
+                <h3>Computer Vision</h3>
+                <p>Advanced recognition of floral species including Bougainvillea, Daisies, and Tulips.</p>
+                <div class="model-action">
+                    <input type="file" id="flower-input" hidden accept="image/*">
+                    <button class="action-btn" onclick="document.getElementById('flower-input').click()">Upload Image</button>
+                    <div id="flower-result" class="result-area"></div>
+                </div>
+            </div>
+
+            <!-- Sentiment Analysis -->
+            <div class="card glass">
+                <div class="card-icon"><i class="fas fa-brain"></i></div>
+                <h3>Linguistic Intelligence</h3>
+                <p>Deep sentiment analysis to decode the emotional undertones of any text input.</p>
+                <div class="model-action">
+                    <textarea id="sentiment-input" placeholder="Enter text to analyze..."></textarea>
+                    <button class="action-btn" onclick="analyzeSentiment()">Analyze Emotion</button>
+                    <div id="sentiment-result" class="result-area"></div>
+                </div>
+            </div>
+
+            <div class="card glass">
+                <div class="card-icon"><i class="fas fa-robot"></i></div>
+                <h3>Agentic Intelligence</h3>
+                <p>Specialized AI Agent powered by Gemini. Click below for an expert explanation of artificial intelligence.</p>
+                <div class="model-action">
+                    <button class="action-btn" style="background: linear-gradient(135deg, #7000ff, #00d4ff); color: white; padding: 1rem;" onclick="askAgent('Explain how AI works in Urdu')">
+                        <i class="fas fa-language"></i> Explain AI in Urdu
+                    </button>
+                    <div id="agent-result" class="result-area"></div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <footer>
+        <p>&copy; 2026 AI HUB Ecosystem. Built with Google Deepmind Technologies.</p>
+    </footer>
+
+    <script src="{{ url_for('static', filename='js/main.js') }}"></script>
+</body>
+</html>

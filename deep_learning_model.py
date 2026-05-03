@@ -81,17 +81,58 @@ model.compile(
     metrics=['accuracy']
 )
 
-# 6. Training
-print(f"Starting training for classes: {SELECTED_CLASSES}")
-early_stopping = EarlyStopping(monitor='val_loss', patience=5, restore_best_weights=True)
+# 6. Initial Training (Frozen Base)
+print(f"Starting initial training for classes: {SELECTED_CLASSES}")
+early_stopping = EarlyStopping(monitor='val_loss', patience=3, restore_best_weights=True)
 
-# Note: This will only run if TensorFlow is installed and dataset is complete
-# history = model.fit(
-#     train_generator,
-#     validation_data=val_generator,
-#     epochs=20,
-#     callbacks=[early_stopping],
-#     verbose=1
-# )
+model.fit(
+    train_generator,
+    validation_data=val_generator,
+    epochs=5,
+    callbacks=[early_stopping],
+    verbose=1
+)
+
+# 7. Fine-Tuning (Unfreeze last block)
+print("\nUnfreezing last block of VGG16 for fine-tuning...")
+
+# Find the VGG16 base within our model
+base_model = None
+for layer in model.layers:
+    if 'vgg16' in layer.name:
+        base_model = layer
+        break
+
+if base_model:
+    base_model.trainable = True
+    # Freeze all layers except the last 4
+    for layer in base_model.layers[:-4]:
+        layer.trainable = False
+else:
+    # If VGG16 layers are top-level
+    for layer in model.layers[:-4]:
+        layer.trainable = False
+    for layer in model.layers[-4:]:
+        layer.trainable = True
+
+model.compile(
+    optimizer=tf.keras.optimizers.Adam(1e-5), # Very low learning rate
+    loss='categorical_crossentropy',
+    metrics=['accuracy']
+)
+
+print("Starting fine-tuning...")
+model.fit(
+    train_generator,
+    validation_data=val_generator,
+    epochs=10,
+    callbacks=[early_stopping],
+    verbose=1
+)
+
+# 8. Save Model
+model_name = "flower_classifier_model.h5"
+model.save(model_name)
+print(f"\nTraining complete! Model saved as {model_name}")
 
 print("\nModel is ready. Classes detected:", train_generator.class_indices)
