@@ -15,6 +15,7 @@ from transformers import pipeline
 
 from google import genai
 from dotenv import load_dotenv
+from datetime import datetime
 
 load_dotenv()
 
@@ -48,6 +49,16 @@ if os.getenv("GEMINI_API_KEY"):
     agent_client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
     print("✅ Agentic AI (Gemini) Connected.")
 
+# 4. In-Memory Activity Logs
+activity_logs = []
+
+def log_activity(data):
+    data['timestamp'] = datetime.utcnow().isoformat()
+    data['id'] = f"log_{len(activity_logs)}_{datetime.utcnow().timestamp()}"
+    activity_logs.insert(0, data)
+    if len(activity_logs) > 10:
+        activity_logs.pop()
+
 # --- ROUTES ---
 
 @app.route('/')
@@ -57,6 +68,39 @@ def index():
 @app.route('/favicon.ico')
 def favicon():
     return '', 204
+
+@app.route('/api/content', methods=['GET'])
+def get_content():
+    # Return defaults
+    default_content = {
+        "nav_logo": "AI<span>HUB</span>",
+        "nav_link_1": "Ecosystem",
+        "nav_link_2": "Contact",
+        "hero_title": "Intelligence <br><span class=\"gradient-text\">Redefined.</span>",
+        "hero_subtitle": "Experience the convergence of Computer Vision, Natural Language Processing, and Advanced Analytics in one unified ecosystem.",
+        "hero_btn_1": "Explore Models",
+        "hero_btn_2": "Repository",
+        "ecosystem_title": "Our AI Ecosystem",
+        "ecosystem_subtitle": "Three powerful models working in harmony to solve complex problems.",
+        "vision_title": "Vision AI",
+        "vision_desc": "Deep learning neural network trained to classify 3 distinct flower classes with high precision.",
+        "vision_btn": "Select Image",
+        "linguistic_title": "Linguistic AI",
+        "linguistic_desc": "Context-aware sentiment engine designed to extract emotional intelligence from unstructured text.",
+        "linguistic_placeholder": "Paste analytical data or text here...",
+        "linguistic_btn": "Run Analysis",
+        "agentic_title": "Agentic AI",
+        "agentic_desc": "Autonomous intelligence layer capable of complex reasoning and context-aware interactions.",
+        "agentic_btn": "Deploy Assistant",
+        "history_title": "Real-time Activity",
+        "history_subtitle": "Live feed of server-side logs and model inferences.",
+        "footer_text": "&copy; 2026 Ayesha Naveed. All rights reserved."
+    }
+    return jsonify(default_content)
+
+@app.route('/api/history', methods=['GET'])
+def get_history():
+    return jsonify(activity_logs)
 
 @app.route('/predict_flower', methods=['POST'])
 def predict_flower():
@@ -75,11 +119,21 @@ def predict_flower():
     preds = flower_model.predict(img_array)
     class_idx = np.argmax(preds[0])
     confidence = float(preds[0][class_idx])
-
-    return jsonify({
+    
+    result = {
         'class': FLOWER_CLASSES[class_idx],
         'confidence': f"{confidence*100:.2f}%"
+    }
+
+    # Log Activity
+    log_activity({
+        'type': 'flower_classification',
+        'input': file.filename,
+        'result': result['class'],
+        'confidence': result['confidence']
     })
+
+    return jsonify(result)
 
 @app.route('/analyze_sentiment', methods=['POST'])
 def analyze_sentiment():
@@ -95,10 +149,22 @@ def analyze_sentiment():
     tfidf_text = vectorizer.transform([text])
     prediction = sentiment_model.predict(tfidf_text)[0]
     
-    return jsonify({
+    result = {
         'label': str(prediction),
         'score': "N/A"
+    }
+
+    # Log Activity
+    log_activity({
+        'type': 'sentiment_analysis',
+        'input': text[:100] + '...' if len(text) > 100 else text,
+        'result': result['label']
     })
+
+    return jsonify(result)
+
+# --- CHAT SESSIONS ---
+chat_sessions = {}
 
 @app.route('/ask_agent', methods=['POST'])
 def ask_agent():
@@ -107,21 +173,44 @@ def ask_agent():
     
     data = request.json
     prompt = data.get('prompt', '')
+    session_id = data.get('session_id', 'default') # Simple session tracking
+    
     if not prompt:
         return jsonify({'error': 'No prompt provided'}), 400
     
     try:
-        # Using gemini-flash-lite-latest for optimal performance and compatibility
-        response = agent_client.models.generate_content(
-            model="gemini-flash-lite-latest", 
-            contents=prompt
-        )
+        # Create or retrieve chat session
+        if session_id not in chat_sessions:
+            chat_sessions[session_id] = agent_client.chats.create(
+                model="gemini-flash-lite-latest",
+                config={"system_instruction": "You are a highly professional AI Consultant. Your responses must be structured with **bold headings**, bullet points where appropriate, and a sophisticated tone. Always aim for clarity and a premium feel in your writing."}
+            )
+        
+        chat = chat_sessions[session_id]
+        response = chat.send_message(prompt)
+        
+        # Log Activity
+        log_activity({
+            'type': 'agent_chat',
+            'input': prompt[:100],
+            'result': 'Response generated'
+        })
+
         return jsonify({
             'response': response.text
         })
     except Exception as e:
-        print(f"❌ Error in /ask_agent: {str(e)}") # Log to terminal for debugging
-        return jsonify({'error': str(e)}), 500
+        error_msg = str(e)
+        print(f"❌ Error in /ask_agent: {error_msg}")
+        # If session fails (e.g. timeout/expired), reset it
+        if session_id in chat_sessions:
+            del chat_sessions[session_id]
+        
+        if "503" in error_msg or "UNAVAILABLE" in error_msg or "high demand" in error_msg.lower():
+            user_msg = "The AI model is currently experiencing high demand. Please try again in a few moments."
+            return jsonify({'error': user_msg}), 503
+            
+        return jsonify({'error': "An internal error occurred. Please try again."}), 500
 
 if __name__ == '__main__':
     port = int(os.getenv("PORT", 5000))
