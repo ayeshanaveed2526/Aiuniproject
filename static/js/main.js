@@ -1,3 +1,166 @@
+// ===== PARTICLE BACKGROUND =====
+const canvas = document.getElementById('particle-canvas');
+const ctx = canvas.getContext('2d');
+let particles = [];
+let mouse = { x: null, y: null };
+let animId;
+
+function resizeCanvas() {
+    canvas.width = window.innerWidth;
+    canvas.height = window.innerHeight;
+}
+resizeCanvas();
+window.addEventListener('resize', resizeCanvas);
+
+document.addEventListener('mousemove', e => {
+    mouse.x = e.clientX;
+    mouse.y = e.clientY;
+});
+
+class Particle {
+    constructor() { this.reset(); }
+    reset() {
+        this.x = Math.random() * canvas.width;
+        this.y = Math.random() * canvas.height;
+        this.size = Math.random() * 2 + 0.5;
+        this.speedX = (Math.random() - 0.5) * 0.5;
+        this.speedY = (Math.random() - 0.5) * 0.5;
+        this.opacity = Math.random() * 0.5 + 0.1;
+    }
+    update() {
+        this.x += this.speedX;
+        this.y += this.speedY;
+        if (this.x < 0 || this.x > canvas.width) this.speedX *= -1;
+        if (this.y < 0 || this.y > canvas.height) this.speedY *= -1;
+        // Mouse interaction
+        if (mouse.x && mouse.y) {
+            const dx = mouse.x - this.x;
+            const dy = mouse.y - this.y;
+            const dist = Math.sqrt(dx * dx + dy * dy);
+            if (dist < 150) {
+                const force = (150 - dist) / 150;
+                this.x -= dx * force * 0.01;
+                this.y -= dy * force * 0.01;
+            }
+        }
+    }
+    draw() {
+        ctx.beginPath();
+        ctx.arc(this.x, this.y, this.size, 0, Math.PI * 2);
+        ctx.fillStyle = `rgba(0, 242, 254, ${this.opacity})`;
+        ctx.fill();
+    }
+}
+
+function initParticles(count = 80) {
+    particles = [];
+    for (let i = 0; i < count; i++) particles.push(new Particle());
+}
+
+function drawConnections() {
+    for (let i = 0; i < particles.length; i++) {
+        for (let j = i + 1; j < particles.length; j++) {
+            const dx = particles[i].x - particles[j].x;
+            const dy = particles[i].y - particles[j].y;
+            const dist = Math.sqrt(dx * dx + dy * dy);
+            if (dist < 150) {
+                ctx.beginPath();
+                ctx.moveTo(particles[i].x, particles[i].y);
+                ctx.lineTo(particles[j].x, particles[j].y);
+                ctx.strokeStyle = `rgba(0, 242, 254, ${0.06 * (1 - dist / 150)})`;
+                ctx.lineWidth = 0.5;
+                ctx.stroke();
+            }
+        }
+    }
+}
+
+function animateParticles() {
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    particles.forEach(p => { p.update(); p.draw(); });
+    drawConnections();
+    animId = requestAnimationFrame(animateParticles);
+}
+initParticles();
+animateParticles();
+
+// ===== TOAST NOTIFICATIONS =====
+function showToast(message, type = 'info') {
+    const container = document.getElementById('toast-container');
+    const toast = document.createElement('div');
+    const icons = { success: 'fa-check-circle', error: 'fa-exclamation-circle', info: 'fa-info-circle' };
+    toast.className = `toast toast--${type}`;
+    toast.innerHTML = `<i class="fas ${icons[type] || icons.info}"></i> ${message}`;
+    container.appendChild(toast);
+    setTimeout(() => {
+        toast.classList.add('removing');
+        setTimeout(() => toast.remove(), 300);
+    }, 3000);
+}
+
+// ===== SCROLL REVEAL =====
+function initScrollReveal() {
+    const observer = new IntersectionObserver((entries) => {
+        entries.forEach(entry => {
+            if (entry.isIntersecting) {
+                const delay = entry.target.dataset.delay || 0;
+                setTimeout(() => entry.target.classList.add('visible'), parseInt(delay));
+                observer.unobserve(entry.target);
+            }
+        });
+    }, { threshold: 0.1 });
+
+    document.querySelectorAll('.reveal').forEach(el => observer.observe(el));
+}
+
+// ===== NAV SHRINK ON SCROLL =====
+function initNavScroll() {
+    const nav = document.querySelector('nav');
+    window.addEventListener('scroll', () => {
+        nav.classList.toggle('scrolled', window.scrollY > 100);
+    });
+}
+
+// ===== DRAG & DROP ZONE =====
+function initDragDrop() {
+    const zone = document.getElementById('drop-zone');
+    const input = document.getElementById('flower-input');
+    if (!zone || !input) return;
+
+    zone.addEventListener('click', () => input.click());
+
+    zone.addEventListener('dragover', (e) => {
+        e.preventDefault();
+        zone.classList.add('dragover');
+    });
+
+    zone.addEventListener('dragleave', () => {
+        zone.classList.remove('dragover');
+    });
+
+    zone.addEventListener('drop', (e) => {
+        e.preventDefault();
+        zone.classList.remove('dragover');
+        if (e.dataTransfer.files.length) {
+            input.files = e.dataTransfer.files;
+            input.dispatchEvent(new Event('change'));
+        }
+    });
+}
+
+// ===== CHARACTER COUNTER =====
+function initCharCounter() {
+    const textarea = document.getElementById('sentiment-input');
+    const counter = document.getElementById('char-count');
+    if (!textarea || !counter) return;
+    textarea.addEventListener('input', () => {
+        const len = textarea.value.length;
+        counter.textContent = len;
+        counter.parentElement.classList.toggle('warning', len > 1500);
+        counter.parentElement.classList.toggle('danger', len > 1900);
+    });
+}
+
 // --- Chatbot Logic ---
 let sessionId = 'session_' + Math.random().toString(36).substr(2, 9);
 
@@ -20,12 +183,12 @@ async function sendMessage() {
     appendMessage('user', prompt);
     input.value = '';
 
-    // Add thinking indicator
+    // Add typing indicator
     const thinkingId = 'thinking_' + Date.now();
     const thinkingDiv = document.createElement('div');
     thinkingDiv.id = thinkingId;
-    thinkingDiv.className = 'message bot-message';
-    thinkingDiv.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Agent is thinking...';
+    thinkingDiv.className = 'message bot-message typing-indicator';
+    thinkingDiv.innerHTML = '<span></span><span></span><span></span>';
     history.appendChild(thinkingDiv);
     history.scrollTop = history.scrollHeight;
 
@@ -69,6 +232,7 @@ function appendMessage(sender, text, isError = false) {
         copyBtn.onclick = () => {
             navigator.clipboard.writeText(text);
             copyBtn.innerHTML = '<i class="fas fa-check"></i>';
+            showToast('Copied to clipboard', 'success');
             setTimeout(() => copyBtn.innerHTML = '<i class="far fa-copy"></i>', 2000);
         };
         msgDiv.appendChild(copyBtn);
@@ -84,6 +248,7 @@ function clearChat() {
     const history = document.getElementById('chat-history');
     history.innerHTML = '<div class="message bot-message">Chat history cleared. How can I assist you professionally today?</div>';
     sessionId = 'session_' + Math.random().toString(36).substr(2, 9); // Reset session
+    showToast('Chat history cleared', 'info');
 }
 
 // Update existing askAgent to open the chat instead
@@ -135,6 +300,7 @@ async function analyzeSentiment() {
             if (label.includes('pos')) { color = 'var(--success)'; width = '90%'; icon = 'fa-smile-beam'; }
             else if (label.includes('neg')) { color = 'var(--error)'; width = '10%'; icon = 'fa-frown-open'; }
 
+            showToast(`Sentiment analysis: ${data.label}`, 'success');
             resultArea.innerHTML = `
                 <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 5px;">
                     <span>Analysis: <strong style="color: ${color}">${data.label}</strong></span>
@@ -158,6 +324,7 @@ document.getElementById('flower-input').onchange = async function(event) {
     if (!file) return;
 
     // Show Preview
+    document.getElementById('drop-zone').classList.add('has-image');
     const reader = new FileReader();
     reader.onload = (e) => {
         previewContainer.innerHTML = `<img src="${e.target.result}" class="preview-img" alt="Preview">`;
@@ -184,6 +351,7 @@ document.getElementById('flower-input').onchange = async function(event) {
         if (data.error) {
             resultArea.innerHTML = `<span style="color: var(--error)"><i class="fas fa-exclamation-circle"></i> Error: ${data.error}</span>`;
         } else {
+            showToast(`Identified as ${data.class} (${data.confidence})`, 'success');
             resultArea.innerHTML = `
                 <div style="font-size: 0.85rem; opacity: 0.7; margin-bottom: 4px;">Classification Successful</div>
                 <div style="display: flex; justify-content: space-between; align-items: center;">
@@ -229,13 +397,14 @@ async function loadActivityHistory() {
     try {
         const response = await fetch('/api/history');
         const data = await response.json();
+
+        // Clear skeleton
+        feed.innerHTML = '';
         
         if (data.length === 0) {
             feed.innerHTML = '<div class="loading-state">No recent activity found.</div>';
             return;
         }
-
-        feed.innerHTML = '';
         data.forEach(item => {
             const date = new Date(item.timestamp).toLocaleString();
             const typeIcon = {
@@ -265,6 +434,10 @@ async function loadActivityHistory() {
 window.onload = () => {
     loadDynamicContent();
     loadActivityHistory();
+    initScrollReveal();
+    initNavScroll();
+    initDragDrop();
+    initCharCounter();
 };
 
 // Wrap existing actions to refresh history

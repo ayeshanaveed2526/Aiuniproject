@@ -12,6 +12,11 @@
     <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
 </head>
 <body>
+
+    <canvas id="particle-canvas"></canvas>
+
+    <div id="toast-container"></div>
+
     <div class="background-blobs">
         <div class="blob blob-1"></div>
         <div class="blob blob-2"></div>
@@ -35,20 +40,26 @@
         </div>
     </header>
 
-    <section id="ecosystem" class="ecosystem">
-        <div class="section-title">
+    <section id="ecosystem" class="ecosystem reveal">
+        <div class="section-title reveal">
             <h2 id="ecosystem-title">Our AI Ecosystem</h2>
             <p id="ecosystem-subtitle">Three powerful models working in harmony to solve complex problems.</p>
         </div>
 
         <div class="grid">
             <!-- Flower Classifier -->
-            <div class="card glass">
+            <div class="card glass reveal">
                 <div class="card-icon"><i class="fas fa-microscope"></i></div>
                 <h3 id="vision-title">Vision AI</h3>
                 <p id="vision-desc">Deep learning neural network trained to classify 3 distinct flower classes with high precision.</p>
                 <div class="model-action">
-                    <div id="image-preview-container"></div>
+                    <div id="drop-zone" class="drop-zone">
+                        <div id="image-preview-container"></div>
+                        <div class="drop-zone-text">
+                            <i class="fas fa-cloud-upload-alt"></i>
+                            <p>Drop image here or click to browse</p>
+                        </div>
+                    </div>
                     <input type="file" id="flower-input" hidden accept="image/*">
                     <button class="action-btn" id="vision-btn" onclick="document.getElementById('flower-input').click()">
                         <i class="fas fa-upload"></i> Select Image
@@ -58,12 +69,13 @@
             </div>
 
             <!-- Sentiment Analysis -->
-            <div class="card glass">
+            <div class="card glass reveal" data-delay="100">
                 <div class="card-icon"><i class="fas fa-fingerprint"></i></div>
                 <h3 id="linguistic-title">Linguistic AI</h3>
                 <p id="linguistic-desc">Context-aware sentiment engine designed to extract emotional intelligence from unstructured text.</p>
                 <div class="model-action">
-                    <textarea id="sentiment-input" placeholder="Paste analytical data or text here..."></textarea>
+                    <textarea id="sentiment-input" placeholder="Paste analytical data or text here..." maxlength="2000"></textarea>
+                    <div class="char-counter"><span id="char-count">0</span> / 2000</div>
                     <button class="action-btn" id="linguistic-btn" onclick="analyzeSentiment()">
                         <i class="fas fa-bolt"></i> Run Analysis
                     </button>
@@ -72,7 +84,7 @@
             </div>
 
             <!-- Agentic AI -->
-            <div class="card glass">
+            <div class="card glass reveal" data-delay="200">
                 <div class="card-icon"><i class="fas fa-atom"></i></div>
                 <h3 id="agentic-title">Agentic AI</h3>
                 <p id="agentic-desc">Autonomous intelligence layer capable of complex reasoning and context-aware interactions.</p>
@@ -86,13 +98,15 @@
     </section>
 
     <section id="history" class="ecosystem" style="padding-top: 0;">
-        <div class="section-title">
+        <div class="section-title reveal">
             <h2 id="history-title">Real-time Activity</h2>
             <p id="history-subtitle">Live feed of server-side logs and model inferences.</p>
         </div>
         <div id="activity-feed" class="history-grid">
-            <div class="loading-state">
-                <i class="fas fa-circle-notch fa-spin"></i> Synchronizing...
+            <div class="loading-skeleton">
+                <div class="skeleton-item"><div class="skeleton-line skeleton-line--short"></div><div class="skeleton-line skeleton-line--medium"></div><div class="skeleton-line skeleton-line--long"></div></div>
+                <div class="skeleton-item"><div class="skeleton-line skeleton-line--short"></div><div class="skeleton-line skeleton-line--medium"></div><div class="skeleton-line skeleton-line--long"></div></div>
+                <div class="skeleton-item"><div class="skeleton-line skeleton-line--short"></div><div class="skeleton-line skeleton-line--medium"></div><div class="skeleton-line skeleton-line--long"></div></div>
             </div>
         </div>
     </section>
