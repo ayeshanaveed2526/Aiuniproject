@@ -1,16 +1,13 @@
 import os
-import kagglehub
 import numpy as np
 import random
-import pandas as pd
-import matplotlib.pyplot as plt
+import shutil
 import tensorflow as tf
-from sklearn.model_selection import train_test_split
-from tensorflow.keras.applications import VGG16
-from tensorflow.keras.layers import GlobalAveragePooling2D, Dense, Dropout
+from tensorflow.keras.applications import MobileNetV2
+from tensorflow.keras.layers import GlobalAveragePooling2D, Dense, Dropout, BatchNormalization
 from tensorflow.keras.models import Model
-from tensorflow.keras.preprocessing.image import ImageDataGenerator
-from tensorflow.keras.callbacks import EarlyStopping
+from tensorflow.keras.preprocessing.image import ImageDataGenerator, load_img, img_to_array
+from tensorflow.keras.callbacks import EarlyStopping, ReduceLROnPlateau, ModelCheckpoint
 
 # Set random seeds for reproducibility
 seed_value = 42
@@ -18,121 +15,119 @@ np.random.seed(seed_value)
 random.seed(seed_value)
 tf.random.set_seed(seed_value)
 
-# 1. Local Dataset from Zip
-dataset_path = r'dataset/flowers'
-print("Using local dataset path:", dataset_path)
+# 1. DATASET PATHS
+ORIGINAL_DATASET  = r'dataset/flowers_processed'
+BALANCED_DATASET  = r'dataset/flowers_balanced'
 
-# 2. Define Classes (Updated to match folders in 'archive (2).zip')
-SELECTED_CLASSES = ['bougainvillea', 'daisies', 'tulip']
-IMG_SIZE = (224, 224)
-BATCH_SIZE = 32
+SELECTED_CLASSES  = ['bougainvillea', 'daisies', 'other', 'tulip']
+TARGET_CLASSES    = ['bougainvillea', 'daisies', 'tulip']
+OTHER_CLASS       = 'other'
 
-# 3. Data Preparation (Image Generators)
-datagen = ImageDataGenerator(
-    rescale=1.0 / 255.0,
-    rotation_range=20,
-    width_shift_range=0.2,
-    height_shift_range=0.2,
-    horizontal_flip=True,
-    validation_split=0.2 # Use 20% for validation
+IMG_SIZE          = (224, 224)
+BATCH_SIZE        = 32
+TARGET_SAMPLES    = 300 
+
+def augment_directory(src_dir, dst_dir, target_count, augmentor):
+    os.makedirs(dst_dir, exist_ok=True)
+    images = [f for f in os.listdir(src_dir) if f.lower().endswith(('.jpg', '.jpeg', '.png'))]
+    for fname in images:
+        shutil.copy2(os.path.join(src_dir, fname), os.path.join(dst_dir, fname))
+    count = len(images)
+    while count < target_count:
+        src_img_name = random.choice(images)
+        img = load_img(os.path.join(src_dir, src_img_name), target_size=IMG_SIZE)
+        x = img_to_array(img)
+        x = np.expand_dims(x, axis=0)
+        for batch in augmentor.flow(x, batch_size=1, save_to_dir=dst_dir, save_prefix='aug', save_format='jpeg'):
+            count += 1
+            break
+        if count >= target_count: break
+    print(f"  {os.path.basename(dst_dir):20s}: {count} images")
+
+def copy_all(src_dir, dst_dir):
+    os.makedirs(dst_dir, exist_ok=True)
+    images = [f for f in os.listdir(src_dir) if f.lower().endswith(('.jpg', '.jpeg', '.png'))]
+    for fname in images:
+        shutil.copy2(os.path.join(src_dir, fname), os.path.join(dst_dir, fname))
+    print(f"  {'other':20s}: {len(images)} images")
+
+print("\n[INFO] Building balanced dataset ...")
+balance_augmentor = ImageDataGenerator(
+    rotation_range=40, width_shift_range=0.2, height_shift_range=0.2,
+    shear_range=0.2, zoom_range=0.2, horizontal_flip=True, fill_mode='nearest'
 )
 
-train_generator = datagen.flow_from_directory(
-    dataset_path,
-    target_size=IMG_SIZE,
-    batch_size=BATCH_SIZE,
-    classes=SELECTED_CLASSES, # Only load these 3 classes
-    class_mode='categorical',
-    subset='training',
-    seed=seed_value
+if os.path.exists(BALANCED_DATASET): shutil.rmtree(BALANCED_DATASET)
+
+for cls in TARGET_CLASSES:
+    augment_directory(os.path.join(ORIGINAL_DATASET, cls), os.path.join(BALANCED_DATASET, cls), TARGET_SAMPLES, balance_augmentor)
+
+copy_all(os.path.join(ORIGINAL_DATASET, OTHER_CLASS), os.path.join(BALANCED_DATASET, OTHER_CLASS))
+
+# 3. DATA GENERATORS
+train_datagen = ImageDataGenerator(rescale=1.0/255, validation_split=0.2)
+val_datagen = ImageDataGenerator(rescale=1.0/255, validation_split=0.2)
+
+train_generator = train_datagen.flow_from_directory(
+    BALANCED_DATASET, target_size=IMG_SIZE, batch_size=BATCH_SIZE,
+    classes=SELECTED_CLASSES, class_mode='categorical', subset='training', seed=seed_value
+)
+val_generator = val_datagen.flow_from_directory(
+    BALANCED_DATASET, target_size=IMG_SIZE, batch_size=BATCH_SIZE,
+    classes=SELECTED_CLASSES, class_mode='categorical', subset='validation', seed=seed_value
 )
 
-val_generator = datagen.flow_from_directory(
-    dataset_path,
-    target_size=IMG_SIZE,
-    batch_size=BATCH_SIZE,
-    classes=SELECTED_CLASSES,
-    class_mode='categorical',
-    subset='validation',
-    seed=seed_value
-)
+from sklearn.utils.class_weight import compute_class_weight
+class_weights_arr = compute_class_weight('balanced', classes=np.unique(train_generator.labels), y=train_generator.labels)
+class_weights = dict(enumerate(class_weights_arr))
+class_weights[2] *= 2.5 # Heavy bias to 'other' to prevent false positives
 
-# 4. Model Architecture (3 Classes)
+# 4. MODEL - MobileNetV2 (Fast)
 def create_model(num_classes):
-    base_model = VGG16(weights='imagenet', include_top=False, input_shape=(224, 224, 3))
-    
-    # Freeze the base model layers
-    base_model.trainable = False
-    
-    x = base_model.output
-    x = GlobalAveragePooling2D()(x)
-    x = Dense(512, activation='relu')(x)
+    base = MobileNetV2(weights='imagenet', include_top=False, input_shape=(224, 224, 3))
+    base.trainable = False
+    x = GlobalAveragePooling2D()(base.output)
+    x = Dense(128, activation='relu')(x)
     x = Dropout(0.5)(x)
-    predictions = Dense(num_classes, activation='softmax')(x) # 3 outputs
-    
-    return Model(inputs=base_model.input, outputs=predictions)
+    out = Dense(num_classes, activation='softmax')(x)
+    return Model(inputs=base.input, outputs=out)
 
 model = create_model(len(SELECTED_CLASSES))
+model.compile(optimizer='adam', loss='categorical_crossentropy', metrics=['accuracy'])
 
-# 5. Compile Model
-model.compile(
-    optimizer='adam',
-    loss='categorical_crossentropy',
-    metrics=['accuracy']
-)
+callbacks = [
+    EarlyStopping(monitor='val_accuracy', patience=5, restore_best_weights=True),
+    ModelCheckpoint('flower_classifier_model.h5', monitor='val_accuracy', save_best_only=True)
+]
 
-# 6. Initial Training (Frozen Base)
-print(f"Starting initial training for classes: {SELECTED_CLASSES}")
-early_stopping = EarlyStopping(monitor='val_loss', patience=3, restore_best_weights=True)
+print("\nTraining top layers...")
+model.fit(train_generator, validation_data=val_generator, epochs=15, class_weight=class_weights, callbacks=callbacks)
 
-model.fit(
-    train_generator,
-    validation_data=val_generator,
-    epochs=5,
-    callbacks=[early_stopping],
-    verbose=1
-)
+print("\nFine-tuning...")
+model.load_weights('flower_classifier_model.h5')
 
-# 7. Fine-Tuning (Unfreeze last block)
-print("\nUnfreezing last block of VGG16 for fine-tuning...")
-
-# Find the VGG16 base within our model
-base_model = None
+# Find MobileNetV2 base model by searching layers
+mobilenet_base = None
 for layer in model.layers:
-    if 'vgg16' in layer.name:
-        base_model = layer
+    if 'mobilenetv2' in layer.name.lower():
+        mobilenet_base = layer
         break
 
-if base_model:
-    base_model.trainable = True
-    # Freeze all layers except the last 4
-    for layer in base_model.layers[:-4]:
+if mobilenet_base:
+    mobilenet_base.trainable = True
+    # Freeze all but the last 20 layers of the base model
+    for layer in mobilenet_base.layers[:-20]:
         layer.trainable = False
+    print(f"  [INFO] Unfrozen last 20 layers of {mobilenet_base.name}")
 else:
-    # If VGG16 layers are top-level
-    for layer in model.layers[:-4]:
-        layer.trainable = False
-    for layer in model.layers[-4:]:
-        layer.trainable = True
+    print("  [WARN] Could not find MobileNetV2 base layer. Skipping fine-tune.")
 
-model.compile(
-    optimizer=tf.keras.optimizers.Adam(1e-5), # Very low learning rate
-    loss='categorical_crossentropy',
-    metrics=['accuracy']
-)
+model.compile(optimizer=tf.keras.optimizers.Adam(1e-5), loss='categorical_crossentropy', metrics=['accuracy'])
+model.fit(train_generator, validation_data=val_generator, epochs=10, class_weight=class_weights, callbacks=callbacks)
 
-print("Starting fine-tuning...")
-model.fit(
-    train_generator,
-    validation_data=val_generator,
-    epochs=10,
-    callbacks=[early_stopping],
-    verbose=1
-)
-
-# 8. Save Model
-model_name = "flower_classifier_model.h5"
-model.save(model_name)
-print(f"\nTraining complete! Model saved as {model_name}")
-
-print("\nModel is ready. Classes detected:", train_generator.class_indices)
+# Final evaluation
+print("\n[OK] Final Model Evaluation:")
+loss, acc = model.evaluate(val_generator)
+print(f"  Validation Accuracy: {acc*100:.2f}%")
+print(f"  Validation Loss:     {loss:.4f}")
+print("\n[OK] Model training complete and saved as 'flower_classifier_model.h5'")

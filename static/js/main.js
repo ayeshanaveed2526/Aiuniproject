@@ -293,21 +293,34 @@ async function analyzeSentiment() {
             resultArea.innerHTML = `<span style="color: var(--error)"><i class="fas fa-exclamation-triangle"></i> Error: ${data.error}</span>`;
         } else {
             const label = data.label.toLowerCase();
-            let color = 'var(--primary)';
-            let width = '50%';
-            let icon = 'fa-meh';
-
-            if (label.includes('pos')) { color = 'var(--success)'; width = '90%'; icon = 'fa-smile-beam'; }
-            else if (label.includes('neg')) { color = 'var(--error)'; width = '10%'; icon = 'fa-frown-open'; }
-
             showToast(`Sentiment analysis: ${data.label}`, 'success');
+            
+            // Define colors and icons based on sentiment
+            let color = 'var(--primary)';
+            let icon = 'fa-meh';
+            let meterWidth = '50%';
+
+            if (label.includes('pos')) { 
+                color = '#00f2fe'; // Positive cyan
+                icon = 'fa-smile-beam';
+                meterWidth = data.score !== 'N/A' ? data.score : '90%';
+            } else if (label.includes('neg')) { 
+                color = '#ff4b2b'; // Negative red
+                icon = 'fa-frown-open';
+                meterWidth = data.score !== 'N/A' ? data.score : '10%';
+            }
+
             resultArea.innerHTML = `
-                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 5px;">
-                    <span>Analysis: <strong style="color: ${color}">${data.label}</strong></span>
-                    <i class="fas ${icon}" style="color: ${color}"></i>
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+                    <span style="font-size: 0.9rem;">Analysis: <strong style="color: ${color}; text-transform: uppercase;">${data.label}</strong></span>
+                    <i class="fas ${icon}" style="color: ${color}; font-size: 1.2rem;"></i>
                 </div>
-                <div class="sentiment-meter">
-                    <div class="sentiment-fill" style="width: ${width}; background: ${color}"></div>
+                <div class="sentiment-meter" style="height: 6px; background: rgba(255,255,255,0.1); border-radius: 10px; overflow: hidden; margin-bottom: 8px;">
+                    <div class="sentiment-fill" style="width: ${meterWidth}; height: 100%; background: linear-gradient(90deg, ${color}, ${color}dd); transition: width 1s ease-out;"></div>
+                </div>
+                <div style="display: flex; justify-content: space-between; font-size: 0.75rem; opacity: 0.6;">
+                    <span>Confidence: ${data.score}</span>
+                    <span>Context-Aware Engine</span>
                 </div>
             `;
         }
@@ -352,12 +365,19 @@ document.getElementById('flower-input').onchange = async function(event) {
             resultArea.innerHTML = `<span style="color: var(--error)"><i class="fas fa-exclamation-circle"></i> Error: ${data.error}</span>`;
         } else {
             showToast(`Identified as ${data.class} (${data.confidence})`, 'success');
+            
+            let badgeColor = 'rgba(0, 242, 254, 0.1)';
+            if (data.raw_confidence < 0.6) badgeColor = 'rgba(255, 165, 0, 0.2)';
+
             resultArea.innerHTML = `
                 <div style="font-size: 0.85rem; opacity: 0.7; margin-bottom: 4px;">Classification Successful</div>
-                <div style="display: flex; justify-content: space-between; align-items: center;">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
                     <strong style="color: var(--primary); font-size: 1.1rem;">${data.class}</strong>
-                    <span style="background: rgba(0, 242, 254, 0.1); padding: 2px 8px; border-radius: 20px; font-size: 0.8rem;">${data.confidence}</span>
+                    <span style="background: ${badgeColor}; padding: 2px 8px; border-radius: 20px; font-size: 0.8rem;">${data.confidence}</span>
                 </div>
+                <button class="action-btn" style="background: rgba(255,255,255,0.05); border: 1px solid var(--glass-border); font-size: 0.8rem; padding: 8px;" onclick="verifyWithAgent()">
+                    <i class="fas fa-robot"></i> Verify with Agentic AI
+                </button>
             `;
         }
     } catch (e) {
@@ -427,6 +447,38 @@ async function loadActivityHistory() {
         });
     } catch (e) {
         feed.innerHTML = '<div class="loading-state" style="color: var(--error)">Failed to connect to activity logs.</div>';
+    }
+}
+
+// --- Agent Verification for Flower ---
+async function verifyWithAgent() {
+    const input = document.getElementById('flower-input');
+    const resultArea = document.getElementById('flower-result');
+    const file = input.files[0];
+    
+    if (!file) return;
+
+    toggleChat();
+    appendMessage('bot', `🔍 **Multimodal verification initiated...** Analyzing image context for target classes...`);
+    
+    const formData = new FormData();
+    formData.append('file', file);
+
+    try {
+        const response = await fetch('/verify_flower', {
+            method: 'POST',
+            body: formData
+        });
+        const data = await response.json();
+        
+        if (data.error) {
+            appendMessage('bot', `❌ Verification Error: ${data.error}`, true);
+        } else {
+            appendMessage('bot', `### Verification Results\n\n${data.verification}`);
+            showToast('Agentic Verification Complete', 'success');
+        }
+    } catch (e) {
+        appendMessage('bot', '❌ Connection error during verification.', true);
     }
 }
 

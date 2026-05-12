@@ -15,7 +15,7 @@ if not os.path.exists(model_path):
 model = tf.keras.models.load_model(model_path)
 
 # 2. Define classes (Must match the training order)
-CLASSES = ['bougainvillea', 'daisies', 'tulip']
+CLASSES = ['bougainvillea', 'daisies', 'other', 'tulip']
 IMG_SIZE = (224, 224)
 
 def predict_flower(img_path):

@@ -30,7 +30,10 @@ X_train, X_test, y_train, y_test = train_test_split(
 
 # 3. Feature Extraction (TF-IDF)
 print("Converting text to features...")
-vectorizer = TfidfVectorizer(max_features=5000, stop_words='english')
+# Improved vectorizer:
+# - ngram_range=(1, 2) captures phrases like "not like", "very good"
+# - stop_words=None keeps words like "not", "i", "her" which can be important for context
+vectorizer = TfidfVectorizer(max_features=10000, ngram_range=(1, 2))
 X_train_tfidf = vectorizer.fit_transform(X_train)
 X_test_tfidf = vectorizer.transform(X_test)
 
@@ -57,4 +60,13 @@ sns.heatmap(cm, annot=True, fmt='d', cmap='Blues',
 plt.title("Sentiment Analysis Confusion Matrix")
 plt.xlabel("Predicted")
 plt.ylabel("Actual")
-plt.show()
+plt.savefig("confusion_matrix.png") # Save instead of just showing
+print("Confusion matrix saved to confusion_matrix.png")
+
+# 7. Save Model and Vectorizer
+import pickle
+with open('sentiment_model.pkl', 'wb') as f:
+    pickle.dump(model, f)
+with open('sentiment_vectorizer.pkl', 'wb') as f:
+    pickle.dump(vectorizer, f)
+print("Model and Vectorizer saved successfully!")
