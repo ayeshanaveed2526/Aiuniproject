@@ -1,4 +1,5 @@
 import os
+import json
 os.environ['TF_ENABLE_ONEDNN_OPTS'] = '0'
 import warnings
 warnings.filterwarnings("ignore", category=FutureWarning, module="google.api_core")
@@ -12,12 +13,7 @@ import io
 import pickle
 import os
 from transformers import pipeline
-
-from google import genai
-from dotenv import load_dotenv
 from datetime import datetime
-
-load_dotenv()
 
 app = Flask(__name__)
 CORS(app)
@@ -31,11 +27,17 @@ if os.path.exists(FLOWER_MODEL_PATH):
     flower_model = tf.keras.models.load_model(FLOWER_MODEL_PATH)
     print("✅ Flower Model Loaded.")
 
-# 4 classes in alphabetical order (matches Keras directory ordering)
-# Index: 0=bougainvillea, 1=daisies, 2=other, 3=tulip
-FLOWER_CLASSES = ['Bougainvillea', 'Daisies', 'Other', 'Tulip']
-TARGET_INDICES = [0, 1, 3]   # indices that are valid flowers
-OTHER_INDEX    = 2           # index for the 'other' / reject class
+FLOWER_CLASSES = None
+if os.path.exists('flower_classes.json'):
+    with open('flower_classes.json', 'r', encoding='utf-8') as f:
+        FLOWER_CLASSES = json.load(f)
+        if isinstance(FLOWER_CLASSES, list):
+            FLOWER_CLASSES = [str(name).title() for name in FLOWER_CLASSES]
+
+# Fallback when class mapping file is missing
+if not FLOWER_CLASSES:
+    # Index: 0=bougainvillea, 1=daisies, 2=tulip
+    FLOWER_CLASSES = ['Bougainvillea', 'Daisies', 'Tulip']
 
 # 2. Sentiment Analysis (Upgraded to Transformers for high accuracy)
 sentiment_pipeline = None
@@ -56,12 +58,6 @@ if os.path.exists('sentiment_model.pkl'):
     with open('sentiment_vectorizer.pkl', 'rb') as f:
         vectorizer = pickle.load(f)
     print("✅ Local Sentiment Model Loaded (as fallback).")
-
-# 3. Agentic AI (Gemini)
-agent_client = None
-if os.getenv("GEMINI_API_KEY"):
-    agent_client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
-    print("✅ Agentic AI (Gemini) Connected.")
 
 # 4. In-Memory Activity Logs
 activity_logs = []
@@ -116,41 +112,6 @@ def get_content():
 def get_history():
     return jsonify(activity_logs)
 
-@app.route('/verify_flower', methods=['POST'])
-def verify_flower():
-    if not agent_client:
-        return jsonify({'error': 'Agentic AI not configured.'}), 400
-    
-    if 'file' not in request.files:
-        return jsonify({'error': 'No file uploaded'}), 400
-    
-    file = request.files['file']
-    img_bytes = file.read()
-    
-    try:
-        # Prompt Gemini to identify the flower specifically among the 3 target classes
-        prompt = "Identify this flower. Is it a Bougainvillea, Daisy, or Tulip? If it is none of these (like a Rose), please state clearly that it is not one of the target species and identify what it actually is."
-        
-        response = agent_client.models.generate_content(
-            model="gemini-2.0-flash",
-            contents=[
-                prompt,
-                {"mime_type": "image/jpeg", "data": img_bytes}
-            ]
-        )
-        
-        # Log Activity
-        log_activity({
-            'type': 'agent_verification',
-            'input': 'Image Verification',
-            'result': response.text[:50] + '...'
-        })
-
-        return jsonify({'verification': response.text})
-    except Exception as e:
-        print(f"❌ Error in /verify_flower: {e}")
-        return jsonify({'error': str(e)}), 500
-
 @app.route('/predict_flower', methods=['POST'])
 def predict_flower():
     if not flower_model:
@@ -162,72 +123,43 @@ def predict_flower():
     file = request.files['file']
     img_bytes = file.read()
     img = Image.open(io.BytesIO(img_bytes)).convert('RGB')
+    from tensorflow.keras.applications.mobilenet_v2 import preprocess_input
     img = img.resize((224, 224))
-    img_array = np.array(img) / 255.0
+    img_array = np.array(img)
     img_array = np.expand_dims(img_array, axis=0)
+    img_array = preprocess_input(img_array)
 
     # ── Prediction ──────────────────────────────────────────────────
-    # Training class order (alphabetical): bougainvillea(0) daisies(1) other(2) tulip(3)
-    CONFIDENCE_THRESHOLD = 0.45   # Minimum confidence for a target prediction
+    # Training class order (alphabetical): bougainvillea(0) daisies(1) tulip(2)
+    CONFIDENCE_THRESHOLD = 0.60   # Minimum confidence for a target prediction
 
-    preds = flower_model.predict(img_array, verbose=0)[0]  # shape: (4,)
+    preds = flower_model.predict(img_array, verbose=0)[0]
+
+    # Align class list with model output length
+    flower_classes = list(FLOWER_CLASSES)
+    if len(flower_classes) < len(preds):
+        extra = len(preds) - len(flower_classes)
+        flower_classes.extend([f"Class {i + len(flower_classes) + 1}" for i in range(extra)])
+    elif len(flower_classes) > len(preds):
+        flower_classes = flower_classes[:len(preds)]
 
     class_idx  = int(np.argmax(preds))
     confidence = float(preds[class_idx])
 
-    # Gather scores for target classes and the 'other' class
-    target_scores  = {i: float(preds[i]) for i in TARGET_INDICES}
-    other_score    = float(preds[OTHER_INDEX])
-    best_target_idx   = max(target_scores, key=target_scores.get)
-    best_target_score = target_scores[best_target_idx]
-
-    # Accept as a recognised flower ONLY when:
-    #   1. The best target-class score exceeds the threshold, AND
-    #   2. The best target-class score is higher than the 'other' class score
-    if best_target_score >= CONFIDENCE_THRESHOLD and best_target_score > other_score:
-        label      = FLOWER_CLASSES[best_target_idx]
-        confidence = best_target_score
+    if confidence >= CONFIDENCE_THRESHOLD:
+        label      = flower_classes[class_idx]
         recognised = True
     else:
-        # Not one of our 3 flowers — reject gracefully as requested by user
-        label      = "No flower found - This image is not Bougainvillea, Daisy, or Tulip"
+        label      = "Image not found"
         confidence = 0.0
         recognised = False
-
-    # ── Automatic Agentic Verification (Secondary Check) ────────────
-    # Since the model is currently retraining, we use Agentic AI 
-    # to prevent false positives (like Roses being called Tulips).
-    if recognised and agent_client:
-        try:
-            # Quick verification prompt
-            v_prompt = f"Look at this image. The model thinks it is a {label}. Is this image actually a Bougainvillea, Daisy, or Tulip? Answer with ONLY the name of the flower if it is one of those three, or answer 'OTHER' if it is anything else (like a Rose)."
-            
-            v_response = agent_client.models.generate_content(
-                model="gemini-2.0-flash",
-                contents=[v_prompt, {"mime_type": "image/jpeg", "data": img_bytes}]
-            )
-            
-            v_text = v_response.text.strip().upper()
-            
-            # If Gemini disagrees or says it's something else
-            if "OTHER" in v_text or not any(cls.upper() in v_text for cls in ['BOUGAINVILLEA', 'DAISY', 'DAISIES', 'TULIP']):
-                label = "No flower found - This image is not Bougainvillea, Daisy, or Tulip (Verified by AI)"
-                confidence = 0.0
-                recognised = False
-        except Exception as ve:
-            print(f"⚠️ Agentic verification skipped due to error: {ve}")
 
     result = {
         'class':          label,
         'confidence':     f"{confidence * 100:.2f}%",
         'raw_confidence': confidence,
         'recognised':     recognised,
-        'scores': {
-            'Bougainvillea': f"{preds[0]*100:.1f}%",
-            'Daisies':       f"{preds[1]*100:.1f}%",
-            'Other':         f"{preds[2]*100:.1f}%",
-            'Tulip':         f"{preds[3]*100:.1f}%"
-        }
+        'scores': {flower_classes[i]: f"{preds[i]*100:.1f}%" for i in range(len(flower_classes))}
     }
 
     # Log Activity

@@ -363,21 +363,29 @@ document.getElementById('flower-input').onchange = async function(event) {
         
         if (data.error) {
             resultArea.innerHTML = `<span style="color: var(--error)"><i class="fas fa-exclamation-circle"></i> Error: ${data.error}</span>`;
+        } else if (!data.recognised || data.raw_confidence <= 0) {
+            showToast('Image not found', 'error');
+            resultArea.innerHTML = `
+                <div style="font-size: 0.85rem; opacity: 0.7; margin-bottom: 4px;">Rejected</div>
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+                    <strong style="color: var(--error); font-size: 1.1rem;">Image not found</strong>
+                    <span style="background: rgba(255, 75, 43, 0.15); padding: 2px 8px; border-radius: 20px; font-size: 0.8rem;">0.00%</span>
+                </div>
+                <div style="font-size: 0.75rem; opacity: 0.6;">Only Bougainvillea, Daisies, and Tulip are accepted.</div>
+            `;
         } else {
             showToast(`Identified as ${data.class} (${data.confidence})`, 'success');
             
             let badgeColor = 'rgba(0, 242, 254, 0.1)';
             if (data.raw_confidence < 0.6) badgeColor = 'rgba(255, 165, 0, 0.2)';
-
+ 
             resultArea.innerHTML = `
                 <div style="font-size: 0.85rem; opacity: 0.7; margin-bottom: 4px;">Classification Successful</div>
                 <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
                     <strong style="color: var(--primary); font-size: 1.1rem;">${data.class}</strong>
                     <span style="background: ${badgeColor}; padding: 2px 8px; border-radius: 20px; font-size: 0.8rem;">${data.confidence}</span>
                 </div>
-                <button class="action-btn" style="background: rgba(255,255,255,0.05); border: 1px solid var(--glass-border); font-size: 0.8rem; padding: 8px;" onclick="verifyWithAgent()">
-                    <i class="fas fa-robot"></i> Verify with Agentic AI
-                </button>
+                <div style="font-size: 0.75rem; opacity: 0.6;">Only Bougainvillea, Daisies, and Tulip are recognized.</div>
             `;
         }
     } catch (e) {
@@ -447,38 +455,6 @@ async function loadActivityHistory() {
         });
     } catch (e) {
         feed.innerHTML = '<div class="loading-state" style="color: var(--error)">Failed to connect to activity logs.</div>';
-    }
-}
-
-// --- Agent Verification for Flower ---
-async function verifyWithAgent() {
-    const input = document.getElementById('flower-input');
-    const resultArea = document.getElementById('flower-result');
-    const file = input.files[0];
-    
-    if (!file) return;
-
-    toggleChat();
-    appendMessage('bot', `🔍 **Multimodal verification initiated...** Analyzing image context for target classes...`);
-    
-    const formData = new FormData();
-    formData.append('file', file);
-
-    try {
-        const response = await fetch('/verify_flower', {
-            method: 'POST',
-            body: formData
-        });
-        const data = await response.json();
-        
-        if (data.error) {
-            appendMessage('bot', `❌ Verification Error: ${data.error}`, true);
-        } else {
-            appendMessage('bot', `### Verification Results\n\n${data.verification}`);
-            showToast('Agentic Verification Complete', 'success');
-        }
-    } catch (e) {
-        appendMessage('bot', '❌ Connection error during verification.', true);
     }
 }
 

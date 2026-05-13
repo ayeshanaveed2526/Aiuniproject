@@ -1,8 +1,10 @@
 import os
+import json
 os.environ['TF_ENABLE_ONEDNN_OPTS'] = '0'
 import tensorflow as tf
 import numpy as np
 from tensorflow.keras.preprocessing import image
+from tensorflow.keras.applications.mobilenet_v2 import preprocess_input
 import sys
 import os
 
@@ -15,8 +17,13 @@ if not os.path.exists(model_path):
 model = tf.keras.models.load_model(model_path)
 
 # 2. Define classes (Must match the training order)
-CLASSES = ['bougainvillea', 'daisies', 'other', 'tulip']
+if os.path.exists('flower_classes.json'):
+    with open('flower_classes.json', 'r', encoding='utf-8') as f:
+        CLASSES = json.load(f)
+else:
+    CLASSES = ['bougainvillea', 'daisies', 'tulip']
 IMG_SIZE = (224, 224)
+CONFIDENCE_THRESHOLD = 0.60
 
 def predict_flower(img_path):
     if not os.path.exists(img_path):
@@ -27,16 +34,20 @@ def predict_flower(img_path):
     img = image.load_img(img_path, target_size=IMG_SIZE)
     img_array = image.img_to_array(img)
     img_array = np.expand_dims(img_array, axis=0)
-    img_array /= 255.0  # Rescale like training
+    img_array = preprocess_input(img_array)
 
     # Make prediction
     predictions = model.predict(img_array)
-    class_idx = np.argmax(predictions[0])
-    confidence = predictions[0][class_idx] * 100
+    class_idx = int(np.argmax(predictions[0]))
+    confidence = float(predictions[0][class_idx])
 
     print(f"\n--- Prediction Result ---")
-    print(f"Flower: {CLASSES[class_idx]}")
-    print(f"Confidence: {confidence:.2f}%")
+    if confidence >= CONFIDENCE_THRESHOLD:
+        print(f"Flower: {CLASSES[class_idx]}")
+        print(f"Confidence: {confidence * 100:.2f}%")
+    else:
+        print("Image not found")
+        print("Confidence: 0.00%")
     print(f"-------------------------\n")
 
 if __name__ == "__main__":

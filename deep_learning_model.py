@@ -1,4 +1,5 @@
 import os
+import json
 import numpy as np
 import random
 import shutil
@@ -16,12 +17,11 @@ random.seed(seed_value)
 tf.random.set_seed(seed_value)
 
 # 1. DATASET PATHS
-ORIGINAL_DATASET  = r'dataset/flowers_processed'
+ORIGINAL_DATASET  = r'dataset/flowers'
 BALANCED_DATASET  = r'dataset/flowers_balanced'
 
-SELECTED_CLASSES  = ['bougainvillea', 'daisies', 'other', 'tulip']
 TARGET_CLASSES    = ['bougainvillea', 'daisies', 'tulip']
-OTHER_CLASS       = 'other'
+SELECTED_CLASSES  = TARGET_CLASSES
 
 IMG_SIZE          = (224, 224)
 BATCH_SIZE        = 32
@@ -62,11 +62,25 @@ if os.path.exists(BALANCED_DATASET): shutil.rmtree(BALANCED_DATASET)
 for cls in TARGET_CLASSES:
     augment_directory(os.path.join(ORIGINAL_DATASET, cls), os.path.join(BALANCED_DATASET, cls), TARGET_SAMPLES, balance_augmentor)
 
-copy_all(os.path.join(ORIGINAL_DATASET, OTHER_CLASS), os.path.join(BALANCED_DATASET, OTHER_CLASS))
+from tensorflow.keras.applications.mobilenet_v2 import preprocess_input
 
 # 3. DATA GENERATORS
-train_datagen = ImageDataGenerator(rescale=1.0/255, validation_split=0.2)
-val_datagen = ImageDataGenerator(rescale=1.0/255, validation_split=0.2)
+train_datagen = ImageDataGenerator(
+    preprocessing_function=preprocess_input,
+    validation_split=0.2,
+    rotation_range=35,
+    width_shift_range=0.15,
+    height_shift_range=0.15,
+    shear_range=0.2,
+    zoom_range=0.2,
+    horizontal_flip=True,
+    brightness_range=(0.8, 1.2),
+    fill_mode='nearest'
+)
+val_datagen = ImageDataGenerator(
+    preprocessing_function=preprocess_input,
+    validation_split=0.2
+)
 
 train_generator = train_datagen.flow_from_directory(
     BALANCED_DATASET, target_size=IMG_SIZE, batch_size=BATCH_SIZE,
@@ -77,26 +91,38 @@ val_generator = val_datagen.flow_from_directory(
     classes=SELECTED_CLASSES, class_mode='categorical', subset='validation', seed=seed_value
 )
 
+# Persist class order for inference consistency
+class_indices = train_generator.class_indices
+ordered_classes = [None] * len(class_indices)
+for name, idx in class_indices.items():
+    ordered_classes[idx] = name
+with open('flower_classes.json', 'w', encoding='utf-8') as f:
+    json.dump(ordered_classes, f, ensure_ascii=True, indent=2)
+
 from sklearn.utils.class_weight import compute_class_weight
 class_weights_arr = compute_class_weight('balanced', classes=np.unique(train_generator.labels), y=train_generator.labels)
 class_weights = dict(enumerate(class_weights_arr))
-class_weights[2] *= 2.5 # Heavy bias to 'other' to prevent false positives
 
 # 4. MODEL - MobileNetV2 (Fast)
 def create_model(num_classes):
     base = MobileNetV2(weights='imagenet', include_top=False, input_shape=(224, 224, 3))
     base.trainable = False
     x = GlobalAveragePooling2D()(base.output)
-    x = Dense(128, activation='relu')(x)
+    x = Dense(256, activation='relu')(x)
     x = Dropout(0.5)(x)
     out = Dense(num_classes, activation='softmax')(x)
     return Model(inputs=base.input, outputs=out)
 
 model = create_model(len(SELECTED_CLASSES))
-model.compile(optimizer='adam', loss='categorical_crossentropy', metrics=['accuracy'])
+model.compile(
+    optimizer='adam',
+    loss=tf.keras.losses.CategoricalCrossentropy(label_smoothing=0.1),
+    metrics=['accuracy']
+)
 
 callbacks = [
     EarlyStopping(monitor='val_accuracy', patience=5, restore_best_weights=True),
+    ReduceLROnPlateau(monitor='val_accuracy', factor=0.5, patience=2, min_lr=1e-6),
     ModelCheckpoint('flower_classifier_model.h5', monitor='val_accuracy', save_best_only=True)
 ]
 
@@ -115,14 +141,18 @@ for layer in model.layers:
 
 if mobilenet_base:
     mobilenet_base.trainable = True
-    # Freeze all but the last 20 layers of the base model
-    for layer in mobilenet_base.layers[:-20]:
+    # Freeze all but the last 50 layers of the base model
+    for layer in mobilenet_base.layers[:-50]:
         layer.trainable = False
-    print(f"  [INFO] Unfrozen last 20 layers of {mobilenet_base.name}")
+    print(f"  [INFO] Unfrozen last 50 layers of {mobilenet_base.name}")
 else:
     print("  [WARN] Could not find MobileNetV2 base layer. Skipping fine-tune.")
 
-model.compile(optimizer=tf.keras.optimizers.Adam(1e-5), loss='categorical_crossentropy', metrics=['accuracy'])
+model.compile(
+    optimizer=tf.keras.optimizers.Adam(1e-5),
+    loss=tf.keras.losses.CategoricalCrossentropy(label_smoothing=0.05),
+    metrics=['accuracy']
+)
 model.fit(train_generator, validation_data=val_generator, epochs=10, class_weight=class_weights, callbacks=callbacks)
 
 # Final evaluation
