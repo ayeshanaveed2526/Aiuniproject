@@ -19,7 +19,7 @@ def start_chatbot():
     print("-" * 30)
 
     # Initialize chat history
-    chat = client.chats.create(model="gemini-flash-lite-latest")
+    chat = client.chats.create(model="gemini-2.5-flash")
 
     while True:
         user_input = input("\nYou: ")

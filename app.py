@@ -11,12 +11,25 @@ import numpy as np
 from PIL import Image
 import io
 import pickle
-import os
 from transformers import pipeline
 from datetime import datetime
+from dotenv import load_dotenv
+from google import genai
+
+# Load environment variables
+load_dotenv()
 
 app = Flask(__name__)
 CORS(app)
+
+# Initialize Gemini Client
+api_key = os.getenv("GEMINI_API_KEY")
+if api_key:
+    agent_client = genai.Client(api_key=api_key)
+    print("✅ Gemini Agentic Client Loaded.")
+else:
+    agent_client = None
+    print("⚠️ Warning: GEMINI_API_KEY not found. Agentic AI chat will be disabled.")
 
 # --- LOAD MODELS ---
 
@@ -123,6 +136,7 @@ def predict_flower():
     file = request.files['file']
     img_bytes = file.read()
     img = Image.open(io.BytesIO(img_bytes)).convert('RGB')
+    # pyrefly: ignore [missing-import]
     from tensorflow.keras.applications.mobilenet_v2 import preprocess_input
     img = img.resize((224, 224))
     img_array = np.array(img)
@@ -237,7 +251,7 @@ def ask_agent():
         # Create or retrieve chat session
         if session_id not in chat_sessions:
             chat_sessions[session_id] = agent_client.chats.create(
-                model="gemini-flash-lite-latest",
+                model="gemini-2.5-flash",
                 config={"system_instruction": "You are a highly professional AI Consultant. Your responses must be structured with **bold headings**, bullet points where appropriate, and a sophisticated tone. Always aim for clarity and a premium feel in your writing."}
             )
         
